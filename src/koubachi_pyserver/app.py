@@ -6,6 +6,7 @@ import json
 from typing import Dict, Iterable, List, Mapping, NamedTuple, Tuple, Union
 from http.server import BaseHTTPRequestHandler
 import yaml
+import requests
 from flask import Flask, request, Response
 import paho.mqtt.publish as publish
 from koubachi_pyserver.crypto import decrypt, encrypt
@@ -101,6 +102,11 @@ def handle_readings(mac_address: str, readings: Iterable[Reading]) -> None:
         assert isinstance(cfg['topic'], str)
         cfg['topic'] += '/' + mac_address
         post_to_latestvals_mqtt(readings, **cfg)
+    elif output['type'] == 'influxdb_guard':
+        url = output['server'] + "/write/" + output['token'] + \
+        "?db=" + output['db']
+        measurement = output['measurement']
+        influxdb_insert(url, mac_address, measurement, readings)
     else:
         NotImplementedError("Output type not implemented.")
 
@@ -144,6 +150,19 @@ def post_to_latestvals_mqtt(readings: Iterable[Reading],
             mqtt_payload[reading.sensor_type] = reading.value
         publish.single(payload=json.dumps(mqtt_payload), **kwargs)
 
+def influxdb_insert(url: str, mac_address: str, measurement: str, readings: Iterable[Reading]):
+    for reading in readings:
+        print(f"READING: {reading}")
+
+    fields = ",".join([f"{reading.sensor_type}={reading.value}" for reading in readings])
+    print("WRITE: {} MEAS: {},mac_address={} {}".format(url, measurement, mac_address, fields))
+    post_data = f"{measurement},mac_address={mac_address} {fields}"
+    try:
+        r = requests.post(url, data=post_data)
+        print(r.status_code)
+    except ConnectionError as e:
+        print(e)
+
 
 @app.route('/')
 def index() -> Response:
@@ -171,8 +190,8 @@ def get_config(mac_address: str) -> Response:
 @app.route('/v1/smart_devices/<mac_address>/readings', methods=['POST'])
 def add_readings(mac_address: str) -> Response:
     key = get_device_key(mac_address)
-    body = decrypt(key, request.get_data())
-    body_parsed = json.loads(body.replace(b"'", b'"'))
+    _body = decrypt(key, request.get_data())
+    body_parsed = json.loads(_body.replace(b"'", b'"'))
     handle_readings(mac_address, convert_readings(mac_address, body_parsed))
     response = f"current_time={int(time.time())}&last_config_change={get_device_last_config_change(mac_address)}"
     response_enc = encrypt(key, bytes(response, encoding='utf-8'))
@@ -180,7 +199,7 @@ def add_readings(mac_address: str) -> Response:
 
 
 def main() -> None:
-    app.config['last_config_change'] = os.path.getmtime(CONFIG_FILE)
+    app.config['last_config_change'] = time.time()
     with open(CONFIG_FILE) as f:
         config = yaml.safe_load(f.read())
     for cfg in ['output', 'devices']:

@@ -11,6 +11,7 @@ flask = "*"
 pyyaml = "*"
 paho-mqtt = "*"
 cryptography = "*"
+requests = "*"
 
 [dev-packages]
 mypy = "*"
