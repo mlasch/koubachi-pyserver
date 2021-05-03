@@ -47,7 +47,7 @@ def get_device_calibration_parameters(mac_address: str) -> Mapping[str, float]:
 
 def get_device_config(_mac_address: str) -> str:
     cfg = {
-        "transmit_interval": 55202,
+        "transmit_interval": 14400,
         "transmit_app_led": 1,
         "sensor_app_led": 0,
         "day_threshold": 10.0,
@@ -151,17 +151,31 @@ def post_to_latestvals_mqtt(readings: Iterable[Reading],
         publish.single(payload=json.dumps(mqtt_payload), **kwargs)
 
 def influxdb_insert(url: str, mac_address: str, measurement: str, readings: Iterable[Reading]):
+    batch_reading = {}
     for reading in readings:
         print(f"READING: {reading}")
+        if reading.timestamp not in batch_reading:
+            batch_reading[reading.timestamp] = [(reading.sensor_type, reading.value)]
+        else:
+            batch_reading[reading.timestamp].append((reading.sensor_type, reading.value))
 
-    fields = ",".join([f"{reading.sensor_type}={reading.value}" for reading in readings])
-    print("WRITE: {} MEAS: {},mac_address={} {}".format(url, measurement, mac_address, fields))
-    post_data = f"{measurement},mac_address={mac_address} {fields}"
+    print("BATCH READING:", batch_reading)
+    #fields = ",".join([f"{reading.sensor_type}={reading.value}" for reading in readings])
+    #print("WRITE: {} MEAS: {},mac_address={} {}".format(url, measurement, mac_address, fields))
+    #post_data = f"{measurement},mac_address={mac_address} {fields}"
+    
+    #post_data = ""
+    #for timestamp, fields in batch_reading.items():
+    #    fields_str = ",".join([f"{field[0]}={field[1]}" for field in fields])
+
+    #    post_data += f"{measurement},mac_address={mac_address} {fields_str} {timestamp}\n"
+
+    post_data = "\n".join(["{},mac_address={} {} {}".format(measurement, mac_address, ",".join([f"{field[0]}={field[1]}" for field in fields]), timestamp*1000_000_000) for timestamp, fields in batch_reading.items()])
     try:
         r = requests.post(url, data=post_data)
-        print(r.status_code)
+        app.logger.info("POST DATA: {} with return code {}".format(post_data, r.status_code))
     except ConnectionError as e:
-        print(e)
+        app.logger.error(e)
 
 
 @app.route('/')
@@ -204,7 +218,7 @@ def main() -> None:
         config = yaml.safe_load(f.read())
     for cfg in ['output', 'devices']:
         app.config[cfg] = config[cfg]
-    app.run(host='0.0.0.0', port=8005)
+    app.run(host='0.0.0.0', port=8005, debug=True)
 
 
 if __name__ == '__main__':

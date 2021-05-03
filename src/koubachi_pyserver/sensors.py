@@ -68,7 +68,7 @@ SENSORS: Dict[int, Sensor] = {
     7: Sensor("temperature", True, 3600, convert_lm94022_temperature),
     8: Sensor("light", True, 3600, convert_sfh3710_light),
     9: Sensor("rssi", True, None, lambda x, _: x),
-    10: Sensor("soil_sensors_trigger", True, 18000, None),
+    10: Sensor("soil_sensors_trigger", True, 10800, None),
     11: Sensor("soil_temperature", True, None, lambda x, _: x - 2.5),
     12: Sensor("soil_moisture", True, None, convert_soil_moisture),
     15: Sensor("temperature", True, 3600, lambda x, _: -46.85 + 175.72 * x / 2 ** 16),
